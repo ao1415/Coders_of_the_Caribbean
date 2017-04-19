@@ -8,24 +8,23 @@ using namespace std;
 
 const string SHIP = "SHIP";
 const string BARREL = "BARREL";
+const string CANNON = "CANNONBALL";
+const string MINE = "MINE";
+
 const int MY = 1;
 const int EN = 0;
+
+const int Width = 22;
+const int Height = 21;
+
+using Stage = array<array<int, Width>, Height>;
 
 namespace Com {
 	const string MOVE = "MOVE ";
 	const string SLOWER = "SLOWER ";
 	const string WAIT = "WAIT";
-
-	const string Move(int x, int y) {
-		return MOVE + to_string(x) + " " + to_string(y);
-	}
-	const string Slower() {
-		return SLOWER;
-	}
-	const string Wait() {
-		return WAIT;
-	}
-
+	const string FIRE = "FIRE ";
+	const string MINE = "MINE ";
 };
 
 class Stopwatch {
@@ -106,42 +105,109 @@ private:
 
 };
 
+struct Point {
+
+	Point() : Point(0, 0) {}
+	Point(int x, int y) {
+		this->x = x;
+		this->y = y;
+	}
+
+	int x;
+	int y;
+
+	const Point operator+(const Point& o) const { return Point(x + o.x, y + o.y); }
+	const Point operator-(const Point& o) const { return Point(x - o.x, y - o.y); }
+};
+
+struct Entity {
+	int id;
+	string type;
+	Point pos;
+	int arg1;
+	int arg2;
+	int arg3;
+	int arg4;
+};
+
 struct EntityShip {
+
 	EntityShip() : EntityShip(0, 0, 0, 0, 0, 0) {}
 	EntityShip(int id, int x, int y, int rot, int speed, int stock) {
 		this->id = id;
-		this->x = x;
-		this->y = y;
+		pos.x = x;
+		pos.y = y;
 		this->rot = rot;
 		this->speed = speed;
 		this->stock = stock;
 	}
 	int id;
-	int x;
-	int y;
+	Point pos;
 	int rot;
 	int speed;
 	int stock;
 };
 
 struct EntityBarrel {
+
 	EntityBarrel() : EntityBarrel(0, 0, 0, 0) {}
 	EntityBarrel(int id, int x, int y, int amount) {
 		this->id = id;
-		this->x = x;
-		this->y = y;
+		pos.x = x;
+		pos.y = y;
 		this->amount = amount;
 	}
 	int id;
-	int x;
-	int y;
+	Point pos;
 	int amount;
+};
+
+struct EntityCannon {
+
+	EntityCannon() : EntityCannon(0, 0, 0, 0, 0) {}
+	EntityCannon(int id, int x, int y, int attacker, int time) {
+		this->id = id;
+		pos.x = x;
+		pos.y = y;
+		this->attacker = attacker;
+		this->time = time;
+	}
+
+	int id;
+	Point pos;
+	int attacker;
+	int time;
+};
+
+struct EntityMine {
+
+	EntityMine() : EntityMine(0, 0, 0) {}
+	EntityMine(int id, int x, int y) {
+		this->id = id;
+		pos.x = x;
+		pos.y = y;
+	}
+
+	int id;
+	Point pos;
 };
 
 struct Input;
 class Share {
 public:
 
+	const static int getMyShipCount() { return myShipCount; }
+	const static int getEnShipCount() { return enShipCount; }
+
+	const static vector<EntityShip>& getMyShip() { return myShip; }
+	const static vector<EntityShip>& getEnShip() { return enShip; }
+
+	const static vector<EntityBarrel>& getBarrel() { return barrel; }
+
+	const static vector<EntityCannon>& getCannon() { return cannon; }
+
+	const static vector<EntityMine>& getMine() { return mine; }
+	const static Stage& getMineStage() { return mineStage; }
 
 	friend Input;
 
@@ -155,6 +221,11 @@ private:
 
 	static vector<EntityBarrel> barrel;
 
+	static vector<EntityCannon> cannon;
+
+	static vector<EntityMine> mine;
+	static Stage mineStage;
+
 };
 
 int Share::myShipCount = 0;
@@ -162,6 +233,9 @@ int Share::enShipCount = 0;
 vector<EntityShip> Share::myShip;
 vector<EntityShip> Share::enShip;
 vector<EntityBarrel> Share::barrel;
+vector<EntityCannon> Share::cannon;
+vector<EntityMine> Share::mine;
+Stage Share::mineStage;
 
 struct Input {
 
@@ -174,26 +248,22 @@ struct Input {
 		Share::myShip.clear();
 		Share::enShip.clear();
 		Share::barrel.clear();
+		Share::cannon.clear();
+		Share::mine.clear();
+		for (auto& v : Share::mineStage) v.fill(0);
 
 		cin >> Share::myShipCount; cin.ignore();
 		int n;
 		cin >> n; cin.ignore();
 
 		for (int i = 0; i < n; i++) {
-			int entityId;
-			string entityType;
-			int x;
-			int y;
-			int arg1;
-			int arg2;
-			int arg3;
-			int arg4;
-			cin >> entityId >> entityType >> x >> y >> arg1 >> arg2 >> arg3 >> arg4; cin.ignore();
+			Entity entity;
+			cin >> entity.id >> entity.type >> entity.pos.x >> entity.pos.y >> entity.arg1 >> entity.arg2 >> entity.arg3 >> entity.arg4; cin.ignore();
 
-			if (entityType == SHIP)
+			if (entity.type == SHIP)
 			{
-				EntityShip ship(entityId, x, y, arg1, arg2, arg3);
-				if (arg4 == MY)
+				EntityShip ship(entity.id, entity.pos.x, entity.pos.y, entity.arg1, entity.arg2, entity.arg3);
+				if (entity.arg4 == MY)
 				{
 					Share::myShip.push_back(ship);
 				}
@@ -202,10 +272,21 @@ struct Input {
 					Share::enShip.push_back(ship);
 				}
 			}
-			else if (entityType == BARREL)
+			else if (entity.type == BARREL)
 			{
-				EntityBarrel barrel(entityId, x, y, arg1);
+				EntityBarrel barrel(entity.id, entity.pos.x, entity.pos.y, entity.arg1);
 				Share::barrel.push_back(barrel);
+			}
+			else if (entity.type == CANNON)
+			{
+				EntityCannon cannon(entity.id, entity.pos.x, entity.pos.y, entity.arg1, entity.arg2);
+				Share::cannon.push_back(cannon);
+			}
+			else if (entity.type == MINE)
+			{
+				EntityMine mine(entity.id, entity.pos.x, entity.pos.y);
+				Share::mine.push_back(mine);
+				Share::mineStage[mine.pos.y][mine.pos.x] = 1;
 			}
 		}
 
@@ -214,11 +295,58 @@ struct Input {
 
 };
 
+const int range(const Point& p1, const Point& p2) {
+	const Point d = p2 - p1;
+	return abs(d.x) + abs(d.y);
+}
+
+inline const string Move(int x, int y) {
+	return Com::MOVE + to_string(x) + " " + to_string(y);
+}
+inline const string Move(const Point& p) {
+	return Move(p.x, p.y);
+}
+inline const string Fire(int x, int y) {
+	return Com::FIRE + to_string(x) + " " + to_string(y);
+}
+inline const string Fire(const Point& p) {
+	return Fire(p.x, p.y);
+}
+inline const string Slower() {
+	return Com::SLOWER;
+}
+inline const string Wait() {
+	return Com::WAIT;
+}
+
 class AI {
 public:
 
 	const string think() {
-		return Com::Move(0, 0);
+		string com = "";
+
+		const auto& myShip = Share::getMyShip();
+		const auto& barrel = Share::getBarrel();
+
+		if (barrel.size() > 0)
+		{
+			int min = range(myShip[0].pos, barrel[0].pos);
+			Point pos = barrel[0].pos;
+			for (size_t i = 1; i < barrel.size(); i++)
+			{
+				const int r = range(myShip[0].pos, barrel[i].pos);
+				if (r < min)
+				{
+					min = r;
+					pos = barrel[i].pos;
+				}
+			}
+			com = Move(pos.x, pos.y);
+		}
+
+		if (com == "") com = Wait();
+
+		return com;
 	}
 
 private:
