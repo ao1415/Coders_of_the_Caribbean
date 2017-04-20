@@ -249,6 +249,8 @@ struct Input {
 		Share::enShip.clear();
 		Share::barrel.clear();
 		Share::cannon.clear();
+
+		//地雷データはそのうち継続して使いたい(視界内の地雷のみを更新したい)
 		Share::mine.clear();
 		for (auto& v : Share::mineStage) v.fill(0);
 
@@ -322,31 +324,33 @@ inline const string Wait() {
 class AI {
 public:
 
-	const string think() {
-		string com = "";
+	const vector<string> think() {
 
 		const auto& myShip = Share::getMyShip();
 		const auto& barrel = Share::getBarrel();
+		vector<string> coms(Share::getMyShipCount());
 
-		if (barrel.size() > 0)
+		for (size_t i = 0; i < myShip.size(); i++)
 		{
-			int min = range(myShip[0].pos, barrel[0].pos);
-			Point pos = barrel[0].pos;
-			for (size_t i = 1; i < barrel.size(); i++)
+			coms[i] = Wait();
+			if (barrel.size() > 0)
 			{
-				const int r = range(myShip[0].pos, barrel[i].pos);
-				if (r < min)
+				int min = range(myShip[i].pos, barrel[0].pos);
+				Point pos = barrel[0].pos;
+				for (size_t i = 1; i < barrel.size(); i++)
 				{
-					min = r;
-					pos = barrel[i].pos;
+					const int r = range(myShip[i].pos, barrel[i].pos);
+					if (r < min)
+					{
+						min = r;
+						pos = barrel[i].pos;
+					}
 				}
+				coms[i] = Move(pos.x, pos.y);
 			}
-			com = Move(pos.x, pos.y);
 		}
 
-		if (com == "") com = Wait();
-
-		return com;
+		return coms;
 	}
 
 private:
@@ -365,10 +369,16 @@ int main() {
 	while (Input::update()) {
 
 		sw.start();
-		const string com = ai.think();
+		const auto& coms = ai.think();
 		sw.stop();
 
-		cout << com << endl;
+		for (const auto& com : coms)
+		{
+			if (com == "")
+				cout << Wait() << endl;
+			else
+				cout << com << endl;
+		}
 
 		cerr << sw.millisecond() << "ms" << endl;
 		cout.flush();
