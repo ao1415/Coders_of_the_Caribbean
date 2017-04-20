@@ -297,6 +297,8 @@ struct Input {
 
 };
 
+inline std::ostream& operator << (ostream& os, const Point& p) { return os << "(" << p.x << ", " << p.y << ")"; }
+
 const int range(const Point& p1, const Point& p2) {
 	const Point d = p2 - p1;
 	return abs(d.x) + abs(d.y);
@@ -330,23 +332,25 @@ public:
 		const auto& barrel = Share::getBarrel();
 		vector<string> coms(Share::getMyShipCount());
 
-		for (size_t i = 0; i < myShip.size(); i++)
+		for (size_t id = 0; id < myShip.size(); id++)
 		{
-			coms[i] = Wait();
+			coms[id] = Wait();
 			if (barrel.size() > 0)
 			{
-				int min = range(myShip[i].pos, barrel[0].pos);
+				int min = range(myShip[id].pos, barrel[0].pos);
 				Point pos = barrel[0].pos;
+				
 				for (size_t i = 1; i < barrel.size(); i++)
 				{
-					const int r = range(myShip[i].pos, barrel[i].pos);
+					const int r = range(myShip[id].pos, barrel[i].pos);
+
 					if (r < min)
 					{
 						min = r;
 						pos = barrel[i].pos;
 					}
 				}
-				coms[i] = Move(pos.x, pos.y);
+				coms[id] = Move(pos.x, pos.y);
 			}
 		}
 
