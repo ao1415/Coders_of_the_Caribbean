@@ -3,6 +3,7 @@
 #include <chrono>
 #include <vector>
 #include <string>
+#include <random>
 
 using namespace std;
 
@@ -115,6 +116,8 @@ struct Point {
 
 	int x;
 	int y;
+
+	const bool operator==(const Point& o) const { return (x == o.x && y == o.y); }
 
 	const Point operator+(const Point& o) const { return Point(x + o.x, y + o.y); }
 	const Point operator-(const Point& o) const { return Point(x - o.x, y - o.y); }
@@ -300,8 +303,12 @@ struct Input {
 inline std::ostream& operator << (ostream& os, const Point& p) { return os << "(" << p.x << ", " << p.y << ")"; }
 
 const int range(const Point& p1, const Point& p2) {
-	const Point d = p2 - p1;
-	return abs(d.x) + abs(d.y);
+	const int z1 = p1.x + (p1.y + 1) / 2;
+	const int z2 = p2.x + (p2.y + 1) / 2;
+	const int dx = abs(p1.x - p2.x);
+	const int dy = abs(p1.y - p2.y);
+	const int dz = abs(z1 - z2);
+	return max({ dx,dy,dz });
 }
 
 inline const string Move(int x, int y) {
@@ -326,20 +333,31 @@ inline const string Wait() {
 class AI {
 public:
 
+	AI() {
+
+		lastMyShip.resize(3);
+		for (auto& ship : lastMyShip) ship.pos = Point(-1, -1);
+		lastCommand.resize(3);
+		for (auto& com : lastCommand) com = Move(-1, -1);
+
+	}
+
 	const vector<string> think() {
 
 		const auto& myShip = Share::getMyShip();
 		const auto& barrel = Share::getBarrel();
+		const auto& cannons = Share::getCannon();
 		vector<string> coms(Share::getMyShipCount());
 
 		for (size_t id = 0; id < myShip.size(); id++)
 		{
 			coms[id] = Wait();
+
 			if (barrel.size() > 0)
 			{
 				int min = range(myShip[id].pos, barrel[0].pos);
 				Point pos = barrel[0].pos;
-				
+
 				for (size_t i = 1; i < barrel.size(); i++)
 				{
 					const int r = range(myShip[id].pos, barrel[i].pos);
@@ -351,15 +369,39 @@ public:
 					}
 				}
 				coms[id] = Move(pos.x, pos.y);
+
+				if (myShip[id].pos == lastMyShip[id].pos)
+				{
+					if (coms[id] == lastCommand[id])
+					{
+						coms[id] = Move(rand() % Width, rand() % Height);
+					}
+				}
+
+			}
+			else
+			{
+				for (const auto& cannon : cannons)
+				{
+					const auto r = range(cannon.pos, myShip[id].pos);
+					if (r < 2)
+					{
+						coms[id] = Move(rand() % Width, rand() % Height);
+					}
+				}
 			}
 		}
+
+		lastMyShip = myShip;
+		lastCommand = coms;
 
 		return coms;
 	}
 
 private:
 
-
+	vector<EntityShip> lastMyShip;
+	vector<string> lastCommand;
 
 };
 
