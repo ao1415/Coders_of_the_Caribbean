@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <random>
+#include <queue>
 
 using namespace std;
 
@@ -121,6 +122,11 @@ struct Point {
 
 	const Point operator+(const Point& o) const { return Point(x + o.x, y + o.y); }
 	const Point operator-(const Point& o) const { return Point(x - o.x, y - o.y); }
+
+	const bool inside() const { return (0 <= x && x < Width && 0 <= y && y < Height); }
+
+	const string toString() const { return to_string(x) + " " + to_string(y); }
+
 };
 
 struct Entity {
@@ -308,7 +314,7 @@ const int range(const Point& p1, const Point& p2) {
 	const int dx = abs(p1.x - p2.x);
 	const int dy = abs(p1.y - p2.y);
 	const int dz = abs(z1 - z2);
-	return max({ dx,dy,dz });
+	return max(dx, max(dy, dz));
 }
 
 inline const string Move(int x, int y) {
@@ -335,73 +341,186 @@ public:
 
 	AI() {
 
-		lastMyShip.resize(3);
-		for (auto& ship : lastMyShip) ship.pos = Point(-1, -1);
-		lastCommand.resize(3);
-		for (auto& com : lastCommand) com = Move(-1, -1);
-
 	}
 
 	const vector<string> think() {
 
-		const auto& myShip = Share::getMyShip();
-		const auto& barrel = Share::getBarrel();
-		const auto& cannons = Share::getCannon();
-		vector<string> coms(Share::getMyShipCount());
+		const int Turn = 5;
+		const int ChokudaiWidth = 1;
 
-		for (size_t id = 0; id < myShip.size(); id++)
+		array<priority_queue<Data>, Turn + 1> qData;
 		{
-			coms[id] = Wait();
+			Data now;
+			now.myShip = Share::getMyShip();
+			now.enShip = Share::getMyShip();
+			now.barrel = Share::getBarrel();
+			now.cannon = Share::getCannon();
+			now.mine = Share::getMine();
+			now.mineStage = Share::getMineStage();
+			qData[0].emplace(now);
+		}
 
-			if (barrel.size() > 0)
+		Timer timer(chrono::milliseconds(20));
+		timer.start();
+
+		const Point dp[2][6] = { { Point(-1,-1),Point(0,-1),Point(-1,0),Point(1,0),Point(-1,1),Point(0,1) },
+		{ Point(0,-1),Point(1,-1),Point(-1,0),Point(1,0),Point(0,-1),Point(1,1) } };
+
+		const int ShipCount = Share::getMyShipCount();
+
+		array<vector<Command>, Turn> coms;
+		for (auto& v : coms) v.resize(ShipCount);
+
+		while (!timer)
+		{
+			for (int id = 0; id < ShipCount; id++)
 			{
-				int min = range(myShip[id].pos, barrel[0].pos);
-				Point pos = barrel[0].pos;
+				qData.swap(array<priority_queue<Data>, Turn + 1>());
 
-				for (size_t i = 1; i < barrel.size(); i++)
+				for (int t = 0; t < Turn; t++)
 				{
-					const int r = range(myShip[id].pos, barrel[i].pos);
-
-					if (r < min)
+					const Data& data = qData[t].top();
 					{
-						min = r;
-						pos = barrel[i].pos;
+						const int line = data.myShip[id].pos.y % 2;
+						for (int d = 0; d < 6; d++)
+						{
+							const Point dist = data.myShip[id].pos + dp[line][d];
+							if (dist.inside())
+							{
+								//このターンの決まっている船のコマンド
+								vector<Command> c = coms[t];
+								//この船のコマンドを設定
+								c[id] = Command(0, dist);
+
+								const auto nextData = next(data, c, c[id]);
+								qData[t + 1].emplace(nextData);
+							}
+						}
 					}
 				}
-				coms[id] = Move(pos.x, pos.y);
 
-				if (myShip[id].pos == lastMyShip[id].pos)
+				//この船のいい感じの移動パターンを取り出す
+				const auto& top = qData[Turn].top();
+				for (int t = 0; t < Turn; t++)
 				{
-					if (coms[id] == lastCommand[id])
-					{
-						coms[id] = Move(rand() % Width, rand() % Height);
-					}
-				}
-
-			}
-			else
-			{
-				for (const auto& cannon : cannons)
-				{
-					const auto r = range(cannon.pos, myShip[id].pos);
-					if (r < 2)
-					{
-						coms[id] = Move(rand() % Width, rand() % Height);
-					}
+					coms[id][t] = top.command[t];
 				}
 			}
 		}
 
-		lastMyShip = myShip;
-		lastCommand = coms;
+		vector<string> stringComs;
+		for (const auto& c : coms[0])
+		{
+			stringComs.push_back(c.toString());
+		}
 
-		return coms;
+		return stringComs;
 	}
 
 private:
 
-	vector<EntityShip> lastMyShip;
-	vector<string> lastCommand;
+	struct Command {
+
+		Command() {
+
+		}
+		Command(int c) {
+			com = c;
+		}
+		Command(int c, const Point& p) {
+			com = c;
+			pos = p;
+		}
+
+		int com = 4;
+		Point pos;
+
+		const string toString() const {
+			string str;
+			switch (com)
+			{
+			case 0: str = Com::MOVE + pos.toString(); break;
+			case 1: str = Com::FIRE + pos.toString(); break;
+			case 2: str = Com::MINE; break;
+			case 3: str = Com::SLOWER; break;
+			case 4: str = Com::WAIT; break;
+			}
+			return str;
+		}
+
+	};
+
+	struct Data {
+		vector<EntityShip> myShip;
+		vector<EntityShip> enShip;
+		vector<EntityBarrel> barrel;
+		vector<EntityCannon> cannon;
+		vector<EntityMine> mine;
+		Stage mineStage;
+		vector<Command> command;
+		int score = 0;
+
+		const bool operator<(const Data& d) const {
+			return score < d.score;
+		}
+
+	};
+
+	const Data next(Data data, const vector<Command>& coms, const Command& com) const {
+
+		const auto& enShip = data.enShip;
+		auto& myShip = data.myShip;
+		const int ShipCount = myShip.size();
+		auto& barrel = data.barrel;
+		auto& cannon = data.cannon;
+		auto& mine = data.mine;
+		vector<Point> deleteMinePoint;
+
+		const Point dp[2][6] = { { Point(1,0),Point(0,-1),Point(-1,-1),Point(-1,0),Point(-1,1),Point(0,1) },
+		{ Point(1,0),Point(1,-1),Point(0,-1),Point(-1,0),Point(0,-1),Point(1,1) } };
+
+		for (int id = 0; id < ShipCount; id++)
+		{
+			switch (coms[id].com)
+			{
+			case 0:
+				break;
+			case 1:
+				break;
+			case 2:
+				break;
+			case 3:
+				break;
+			case 4:
+				const Point np = myShip[id].pos + dp[myShip[id].pos.y % 2][myShip[id].rot];
+				break;
+			}
+		}
+
+		for (const auto& p : deleteMinePoint)
+			data.mineStage[p.y][p.x] = 0;
+
+		data.command.push_back(com);
+		data.score = eval(data);
+		return data;
+	}
+
+	/*
+	キャノンは打った瞬間に当たる
+	それぞれの船が独立して動く(1つの船のみで、数ターン先をみる)
+	それぞれの行動が決まったら、もう一度各船でシミュレートする(他の船は事前に決まった行動をする)
+
+	行動パターン
+	MOVE 周囲6方向
+	FIRE
+	SLOWER
+
+	MINE
+	*/
+	const int eval(const Data& data) const {
+
+		return 0;
+	}
 
 };
 
